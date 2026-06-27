@@ -51,7 +51,15 @@ def load_documents_from_paths(file_paths: List[str]):
   return docs
 
 def split_documents_to_chunks(docs) -> List[str]:
-  text_splitter = TokenTextSplitter(chunk_size=500, chunk_overlap=50)
-  chunks = text_splitter.split_documents(docs)
-  logger.debug(f"Split {len(docs)} docs into {len(chunks)} chunks")
-  return chunks
+    text_splitter = TokenTextSplitter(
+        chunk_size=500,
+        chunk_overlap=50
+    )
+
+    chunks = text_splitter.split_documents(docs)
+
+    logger.debug(
+        f"Split {len(docs)} docs into {len(chunks)} chunks"
+    )
+
+    return chunks

@@ -3,10 +3,9 @@ import shutil
 from typing import List
 from fastapi import UploadFile
 
-from config.settings import GOOGLE_API_KEY, VECTORSTORE_DIRECTORY, MODEL_OPTIONS
+from config.settings import GOOGLE_API_KEY, VECTORSTORE_DIRECTORY, MODEL_OPTIONS,HF_TOKEN
 from core.document_processor import save_uploaded_file, load_documents_from_paths, split_documents_to_chunks
-
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEndpointEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
@@ -21,7 +20,10 @@ def vectorstore_exists(persist_path: str) -> bool:
 def get_embeddings(model_provider: str):
   logger.debug(f"Getting embeddings for provider: {model_provider}")
   if model_provider == "groq":
-    return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L12-v2")
+    return HuggingFaceEndpointEmbeddings(
+    model="BAAI/bge-small-en-v1.5",
+    huggingfacehub_api_token=HF_TOKEN
+)
   elif model_provider == "gemini":
     return GoogleGenerativeAIEmbeddings(
       model="models/embedding-001",

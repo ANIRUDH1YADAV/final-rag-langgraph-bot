@@ -1,4 +1,5 @@
 from urllib import response
+from langchain_core.documents import Document
 
 from click import Context
 from streamlit import context
@@ -14,48 +15,33 @@ from core.llm_chain_factory import (
 from tavily import TavilyClient
 from config.settings import TAVILY_API_KEY
 
+import re
 
-def rewrite_query(state: GraphState):
+from typing import List
+from pydantic import BaseModel
+from langchain_core.prompts import ChatPromptTemplate
 
-    llm = get_llm(
-        state["model_provider"],
-        state["model_name"]
-    )
+from typing import List
+from pydantic import BaseModel
+from langchain_core.prompts import ChatPromptTemplate
 
-    prompt = f"""
-You are an expert query rewriter for RAG systems.
+from config.settings import UPPER_TH, LOWER_TH
 
-Your job is to rewrite vague, short, or conversational
-questions into specific retrieval-friendly queries.
 
-Rules:
-- Preserve the original meaning.
-- Expand pronouns when possible.
-- Make the query more specific.
-- Use names, entities, and context from the question.
-- Return only the rewritten query.
 
-Question:
-{state["question"]}
-"""
 
-    response = llm.invoke(prompt)
 
-    rewritten_question = (
-        response.content.strip()
-    )
 
-    print(
-        f"\nORIGINAL QUESTION: {state['question']}"
-    )
+from langchain_core.documents import Document
+from langchain_community.tools.tavily_search import TavilySearchResults
 
-    print(
-        f"\nREWRITTEN QUESTION: {rewritten_question}"
-    )
 
-    return {
-        "rewritten_question": rewritten_question
-    }
+
+
+from langchain_core.prompts import ChatPromptTemplate
+
+
+
 
 
 
@@ -100,230 +86,370 @@ def retrieve_documents(state: GraphState):
     )
 
     return {
-        "documents": docs,
-        "context": context
-    }
+    "documents": docs,
+    "context": context,
+    "source": "document"
+}
 
 
-def grade_documents(state: GraphState):
+class DocEvalScore(BaseModel):
+    score: float
+    reason: str
+
+
+def eval_each_doc_node(state: GraphState):
 
     llm = get_llm(
         state["model_provider"],
         state["model_name"]
     )
 
-    grading_prompt = f"""
-You are a relevance grader.
-
-Question:
-{state["question"]}
-
-Retrieved Context:
-{state["context"]}
-
-Determine whether the retrieved context is relevant to answering the question.
-
-Rules:
-
-- If the context contains information related to the question, return YES.
-- If the context contains the exact answer, return YES.
-- If the context contains partial information useful for answering, return YES.
-- Return NO only if the context is completely unrelated.
-
-Return only one word:
-
-YES
-
-or
-
-NO
-"""
-
-    response = llm.invoke(
-        grading_prompt
+    doc_eval_prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                "You are a strict retrieval evaluator for RAG.\n"
+                "You will be given ONE retrieved chunk and a question.\n"
+                "Return a relevance score in [0.0, 1.0].\n"
+                "- 1.0: chunk alone is sufficient to answer fully/mostly\n"
+                "- 0.0: chunk is irrelevant\n"
+                "Be conservative with high scores.\n"
+                "Also return a short reason.\n"
+                "Output JSON only."
+            ),
+            (
+                "human",
+                "Question: {question}\n\nChunk:\n{chunk}"
+            ),
+        ]
     )
 
-    print(
-        "\nQUESTION:",
+    doc_eval_chain = (
+        doc_eval_prompt
+        | llm.with_structured_output(DocEvalScore)
+    )
+
+    question = state.get(
+        "rewritten_question",
         state["question"]
     )
 
+    scores = []
+    good_docs = []
+
+    for doc in state["documents"]:
+
+        result = doc_eval_chain.invoke(
+            {
+                "question": question,
+                "chunk": doc.page_content
+            }
+        )
+
+        scores.append(result.score)
+
+        print(
+            f"Chunk Score: {result.score:.2f}"
+        )
+
+        if result.score > LOWER_TH:
+            good_docs.append(doc)
+
+    if not scores:
+        return {
+            "good_docs": [],
+            "verdict": "INCORRECT",
+            "reason": "No documents retrieved."
+        }
+
+    if any(score > UPPER_TH for score in scores):
+
+        print(
+            "RETRIEVAL DECISION: CORRECT"
+        )
+
+        return {
+            "good_docs": good_docs,
+            "verdict": "CORRECT",
+            "reason": (
+                f"At least one retrieved chunk "
+                f"scored > {UPPER_TH}."
+            )
+        }
+
+    if all(score < LOWER_TH for score in scores):
+
+        print(
+            "RETRIEVAL DECISION: INCORRECT"
+        )
+
+        return {
+            "good_docs": [],
+            "verdict": "INCORRECT",
+            "reason": (
+                f"All retrieved chunks "
+                f"scored < {LOWER_TH}."
+            )
+        }
+
     print(
-        "\nGRADE RESPONSE:",
-        response.content
-    )
-
-    decision = response.content.lower()
-
-    if "yes" in decision:
-        decision = "yes"
-    else:
-        decision = "no"
-
-    print(
-        f"DOCUMENT GRADE DECISION: {decision}"
+        "RETRIEVAL DECISION: AMBIGUOUS"
     )
 
     return {
-        "decision": decision
+        "good_docs": good_docs,
+        "verdict": "AMBIGUOUS",
+        "reason": (
+            f"No chunk scored > {UPPER_TH}, "
+            f"but not all were < {LOWER_TH}."
+        )
     }
 
 
-def route_documents(state: GraphState):
+def route_after_eval(state: GraphState):
 
-    print(
-        f"DOCUMENT GRADE DECISION: {state['decision']}"
-    )
+    if state["verdict"] == "CORRECT":
+        return "refine"
 
-    if state["decision"] == "yes":
-        return "generate"
-
-    return "web_search"
+    return "rewrite_query"
 
 
-def web_search(state: GraphState):
-
-    print(
-        "========== TAVILY SEARCH =========="
-    )
-
-    client = TavilyClient(
-        api_key=TAVILY_API_KEY
-    )
-
-    results = client.search(
-        query=state["question"],
-        max_results=5
-    )
-
-    web_context = "\n\n".join(
-        result["content"]
-        for result in results["results"]
-    )
-
-    return {
-        "context": web_context
-    }
+class WebQuery(BaseModel):
+    query: str
 
 
-def generate_answer(state: GraphState):
+def rewrite_query_node(state: GraphState):
 
     llm = get_llm(
         state["model_provider"],
         state["model_name"]
     )
 
-    prompt = get_prompt()
-
-    print(
-    "\nCHAT HISTORY PASSED TO LLM:\n",
-    state.get("chat_history", [])
-)
-
-    prompt_value = prompt.invoke(
-        {
-            "context": state["context"],
-            "chat_history": state.get(
-                "chat_history",
-                []
+    rewrite_prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                "Rewrite the user question into a web search query composed of keywords.\n"
+                "Rules:\n"
+                "- Keep it short (6–14 words).\n"
+                "- If the question implies recency (e.g., recent/latest/last week/last month), "
+                "add a constraint like (last 30 days).\n"
+                "- Do NOT answer the question.\n"
+                "- Return JSON with a single key: query"
             ),
-            "input": state["question"]
+            (
+                "human",
+                "Question: {question}"
+            ),
+        ]
+    )
+
+    rewrite_chain = (
+        rewrite_prompt
+        | llm.with_structured_output(WebQuery)
+    )
+
+    result = rewrite_chain.invoke(
+        {
+            "question": state["question"]
         }
     )
 
-    response = llm.invoke(
-        prompt_value
+    print(
+        f"\nORIGINAL QUESTION: {state['question']}"
+    )
+
+    print(
+        f"\nWEB QUERY: {result.query}"
     )
 
     return {
-        "answer": response.content,
-        "retry_count": state.get(
-            "retry_count",
-            0
-        ) + 1
+        "web_query": result.query
     }
 
-def hallucination_check(state: GraphState):
+
+tavily = TavilySearchResults(max_results=5)
+
+
+def web_search_node(state: GraphState):
+
+    query = (
+        state.get("web_query")
+        or state.get("rewritten_question")
+        or state["question"]
+    )
+
+    results = tavily.invoke(
+        {"query": query}
+    )
+
+    web_docs = []
+
+    for result in results or []:
+
+        title = result.get(
+            "title",
+            ""
+        )
+
+        url = result.get(
+            "url",
+            ""
+        )
+
+        content = (
+            result.get("content", "")
+            or result.get("snippet", "")
+        )
+
+        text = (
+            f"TITLE: {title}\n"
+            f"URL: {url}\n"
+            f"CONTENT:\n{content}"
+        )
+
+        web_docs.append(
+            Document(
+                page_content=text,
+                metadata={
+                    "url": url,
+                    "title": title
+                }
+            )
+        )
+
+    return {
+        "web_docs": web_docs
+    }
+
+class KeepOrDrop(BaseModel):
+    keep: bool
+
+def decompose_to_sentences(text: str) -> List[str]:
+    text = re.sub(r"\s+", " ", text).strip()
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+
+    return [
+        s.strip()
+        for s in sentences
+        if len(s.strip()) > 20
+    ]
+
+
+def refine(state: GraphState):
 
     llm = get_llm(
         state["model_provider"],
         state["model_name"]
     )
 
-    prompt = f"""
-You are a strict hallucination detector.
-
-Question:
-{state["question"]}
-
-Context:
-{state["context"]}
-
-Answer:
-{state["answer"]}
-
-Rules:
-
-- Return "yes" if every important claim in the answer is supported by the context.
-- Return "no" if the answer contains unsupported information.
-- Return only one word: yes or no.
-"""
-
-    response = llm.invoke(prompt)
-
-    grounded = (
-        response.content
-        .strip()
-        .lower()
+    filter_prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                "You are a strict relevance filter.\n"
+                "Return keep=true only if the sentence directly helps answer the question.\n"
+                "Use ONLY the sentence. Output JSON only."
+            ),
+            (
+                "human",
+                "Question: {question}\n\nSentence:\n{sentence}"
+            ),
+        ]
     )
 
-    print(
-        f"HALLUCINATION CHECK: {grounded}"
+    filter_chain = (
+        filter_prompt
+        | llm.with_structured_output(KeepOrDrop)
     )
+
+    question = state["question"]
+
+    if state.get("verdict") == "CORRECT":
+
+        docs_to_use = state["good_docs"]
+
+    elif state.get("verdict") == "INCORRECT":
+
+        docs_to_use = state["web_docs"]
+
+    else:  # AMBIGUOUS
+
+        docs_to_use = (
+            state["good_docs"]
+            + state["web_docs"]
+        )
+
+    context = "\n\n".join(
+        doc.page_content
+        for doc in docs_to_use
+    ).strip()
+
+    strips = decompose_to_sentences(
+        context
+    )
+
+    kept: List[str] = []
+    for s in strips:
+        if filter_chain.invoke({"question": question, "sentence": s}).keep:
+            kept.append(s)
+
+    
+
+    refined_context = "\n".join(
+        kept
+    ).strip()
 
     return {
-        "grounded": grounded
+        "strips": strips,
+        "kept_strips": kept,
+        "refined_context": refined_context,
     }
 
-def update_memory(state: GraphState):
 
-    history = state.get(
-        "chat_history",
-        []
+
+
+
+
+def generate(state: GraphState):
+
+    llm = get_llm(
+        state["model_provider"],
+        state["model_name"]
     )
 
-    history.append(
+    answer_prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                "You are a retrieval-augmented assistant. "
+                "Answer ONLY using the provided context.\n"
+                "If the context is empty or insufficient, "
+                "say: 'I don't know.'"
+            ),
+            (
+                "human",
+                "Question: {question}\n\nContext:\n{context}"
+            ),
+        ]
+    )
+
+    chain = answer_prompt | llm
+
+    response = chain.invoke(
         {
-            "role": "user",
-            "content": state["question"]
+            "question": state["question"],
+            "context": state["refined_context"]
         }
     )
 
-    history.append(
-        {
-            "role": "assistant",
-            "content": state["answer"]
-        }
-    )
-
     return {
-        "chat_history": history
-    }
+        "answer": response.content
+    }   
 
 
 
 
-def route_hallucination(state: GraphState):
 
-    retry_count = state.get(
-        "retry_count",
-        0
-    )
 
-    if state["grounded"] == "yes":
-        return "end"
 
-    if retry_count >= 2:
-        return "end"
-
-    return "regenerate"

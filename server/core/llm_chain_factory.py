@@ -11,25 +11,37 @@ from utils.logger import logger
 def get_prompt():
     return ChatPromptTemplate.from_template(
         """
-You are a helpful AI assistant.
+You are a source-aware AI assistant.
 
-Use the conversation history whenever it contains
-information needed to answer the user's question.
+Current Source:
+{source}
 
-Priority:
+Rules:
 
-1. Chat History
-2. Retrieved Context
-3. Web Search Context
+If source = document:
 
-If the answer exists in chat history,
-use it.
+- Answer ONLY from the provided document context.
+- Ignore chat history unless the user explicitly asks about previous messages.
+- If the answer is not present in the document, say:
+  "The information is not mentioned in the document."
 
-If the answer exists in retrieved context,
-use it.
+- Start your response with:
+  📄 Answer From Document
 
-If the answer cannot be found,
-say you don't know.
+
+If source = web_search:
+
+- Answer ONLY from web search results.
+- Start your response with:
+  🌐 Answer From Web Search
+
+
+If source = chat_history:
+
+- Answer ONLY from chat history.
+- Start your response with:
+  💬 Answer From Chat History
+
 
 Context:
 {context}
@@ -41,7 +53,6 @@ Question:
 {input}
 """
     )
-
 
 def get_llm(model_provider: str, model: str):
 

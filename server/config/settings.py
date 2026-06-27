@@ -26,3 +26,14 @@ VECTORSTORE_DIRECTORY = {
   key.lower(): f"./data/{key.lower()}_vector_store"
   for key in MODEL_OPTIONS.keys()
 }
+
+
+
+
+
+HF_TOKEN = os.getenv("HF_TOKEN")
+
+
+# Retrieval grading thresholds
+UPPER_TH = 0.7
+LOWER_TH = 0.3
