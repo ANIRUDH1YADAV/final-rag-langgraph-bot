@@ -1,47 +1,115 @@
-RAG PDFBot
+# 🤖 CRAG PDFBot
 
-This project is a Retrieval-Augmented Generation (RAG) chatbot that allows users to query multiple PDFs for contextual answers. It integrates LangGraph for flexible workflow orchestration, maintains chat memory, rewrites queries for better retrieval, and uses Chroma DB for document search.
+**Corrective Retrieval-Augmented Generation (CRAG) chatbot for PDF
+documents**
 
-Features
-RAG System: Combines document retrieval with an LLM to generate grounded answers.
-LangGraph Workflow: Modular nodes like retrieval, grading, web search, and answer generation.
-Chat Memory: Keeps track of user-LLM interactions for contextual follow-ups.
-Query Rewriting: Improves vague or ambiguous questions for more accurate retrieval.
-Chroma DB: Vector database for storing and searching document embeddings.
-Architecture Overview
-Document Ingestion:
-PDFs are uploaded and split into text chunks.
-Each chunk is embedded into vectors and stored in Chroma DB.
-Query Flow:
-User question is rewritten if needed.
-Closest document chunks are retrieved from Chroma DB.
-Context is fed to the LLM to generate a grounded response.
-Memory is updated for follow-up queries.
-Setup Instructions
+A production-ready AI chatbot that answers questions from uploaded PDF
+documents using a **Corrective Retrieval-Augmented Generation (CRAG)**
+pipeline built with **LangGraph**, **FastAPI**, and **Streamlit**.
 
-Clone the Repository:
+## ✨ Features
 
-git clone https://github.com/YourUsername/RAG-PDFBot.git
-cd RAG-PDFBot
+-   Upload and chat with PDF documents
+-   Corrective RAG (CRAG)
+-   LLM-based document grading
+-   Automatic query rewriting
+-   Tavily web search fallback
+-   Knowledge refinement
+-   Groq and Gemini support
+-   Chroma vector database
+-   FastAPI backend
+-   Streamlit frontend
 
-Install Dependencies:
+## 🏗️ Workflow
 
+``` text
+User Question
+    ↓
+Retrieve Documents
+    ↓
+LLM Document Grading
+    ├── CORRECT (>0.7) → Refine → Generate
+    ├── AMBIGUOUS (0.3–0.7) → Good Docs + Web Search → Refine → Generate
+    └── INCORRECT (<0.3) → Rewrite → Web Search → Refine → Generate
+```
+
+## 🛠️ Tech Stack
+
+-   FastAPI
+-   LangGraph
+-   LangChain
+-   Streamlit
+-   Groq
+-   Google Gemini
+-   ChromaDB
+-   HuggingFace Embeddings
+-   Tavily Search
+
+## 📂 Project Structure
+
+``` text
+client/
+server/
+├── api/
+├── config/
+├── core/
+│   ├── document_processor.py
+│   ├── vector_database.py
+│   ├── llm_chain_factory.py
+│   └── langgraph/
+│       ├── graph.py
+│       ├── nodes.py
+│       └── state.py
+└── main.py
+```
+
+## ⚙️ Installation
+
+``` bash
+git clone https://github.com/<your-username>/<your-repository>.git
+cd <your-repository>
+python -m venv venv
+venv\Scripts\activate
 pip install -r requirements.txt
+```
 
-Run the Application:
+## 🔑 Environment Variables
 
+``` env
+GROQ_API_KEY=
+GOOGLE_API_KEY=
+TAVILY_API_KEY=
+HF_TOKEN=
+```
+
+## ▶️ Run
+
+Backend:
+
+``` bash
+cd server
 uvicorn main:app --reload
-Access:
-The FastAPI app will run locally at http://127.0.0.1:8000.
-API docs can be viewed at /docs.
-Example Usage
-Upload PDFs via the /upload_and_process_pdfs endpoint.
-Use the /chat endpoint to ask questions about the content.
-Follow-up questions will use chat memory for context.
-Tech Stack
-FastAPI: Web framework.
-LangGraph: Manages multi-step reasoning.
-Chroma DB: Vector storage for document embeddings.
-LLMs: Models like LLaMA or Gemini for text generation.
-Future Enhancements
-Pinecone integration for scalable vector search.
+```
+
+Frontend:
+
+``` bash
+cd client
+streamlit run app.py
+```
+
+## 🧪 Example Questions
+
+-   What challenges of AI in healthcare are mentioned?
+-   Explain the benefits and limitations of AI in healthcare.
+-   Who won the FIFA World Cup 2022?
+
+## 👨‍💻 Author
+
+**Anirudh Yadav**
+
+AI / Machine Learning Engineer
+
+## 📄 License
+
+MIT License.
