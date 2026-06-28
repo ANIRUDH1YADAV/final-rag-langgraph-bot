@@ -1,12 +1,22 @@
-# 🤖 CRAG PDFBot
+ Advanced RAG with LangGraph
+Corrective Retrieval-Augmented Generation (CRAG)
 
-**Corrective Retrieval-Augmented Generation (CRAG) chatbot for PDF
-documents**
+Unlike traditional RAG systems that immediately generate an answer from retrieved documents, this chatbot first evaluates the quality of each retrieved document using an LLM.
 
-A production-ready AI chatbot that answers questions from uploaded PDF
-documents using a **Corrective Retrieval-Augmented Generation (CRAG)**
-pipeline built with **LangGraph**, **FastAPI**, and **Streamlit**.
+Depending on the retrieval quality, the workflow follows one of three execution paths:
 
+Correct Retrieval – Answer is generated directly from highly relevant documents.
+Ambiguous Retrieval – Moderately relevant documents are combined with web search results before answer generation.
+Incorrect Retrieval – The query is rewritten, web search is performed, and the answer is generated from refined web information.
+
+This adaptive workflow improves answer quality and reduces hallucinations.
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.41.1-red.svg)](https://streamlit.io/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-0.2.60-green.svg)](https://github.com/langchain-ai/langgraph)
+[![LangChain](https://img.shields.io/badge/LangChain-0.3.13-blue.svg)](https://python.langchain.com/)
+[![ChromaDB](https://img.shields.io/badge/ChromaDB-0.5.23-purple.svg)](https://www.trychroma.com/)
+[![Code style: Python](https://img.shields.io/badge/Code%20Style-Python-black.svg)](https://www.python.org/dev/peps/pep-0008/)
 ## ✨ Features
 
 -   Upload and chat with PDF documents
